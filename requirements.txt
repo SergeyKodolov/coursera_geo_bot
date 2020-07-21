@@ -1,7 +1,10 @@
-certifi>=2020.6.20
-chardet>=3.0.4
-idna>=2.10
-pyTelegramBotAPI>=3.7.2
-requests>=2.24.0
-six>=1.15.0
-urllib3>=1.25.9
+certifi==2020.6.20
+chardet==3.0.4
+dadata==0.3.0
+haversine==2.2.0
+idna==2.10
+pyTelegramBotAPI==3.7.2
+python-telegram-bot-pagination==0.0.1
+requests==2.24.0
+six==1.15.0
+urllib3==1.25.9
