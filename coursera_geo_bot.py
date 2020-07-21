@@ -100,8 +100,9 @@ def main():
             result = dadata.clean('address', message.text)
             if result is not None:
                 location['address'] = result['result']
-                location['location'] = {'latitude': result["geo_lat"],
-                                        'longitude': result["geo_lon"]}
+                if result["geo_lat"] is not None and result["geo_lon"] is not None:
+                    location['location'] = {'latitude': result["geo_lat"],
+                                            'longitude': result["geo_lon"]}
             else:
                 location['title'] = message.text
             users[_id]['locations'][loc_id] = location
