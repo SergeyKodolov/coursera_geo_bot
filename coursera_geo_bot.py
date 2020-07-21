@@ -1,7 +1,8 @@
 import json
 import telebot
 from telebot import types
-from vars import TOKEN, DESCRIPTION, PUSHEEN
+from token import TOKEN
+from vars import DESCRIPTION, PUSHEEN
 
 
 def get_keyboard(buttons, row):
