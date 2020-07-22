@@ -63,6 +63,8 @@ def clean_text(dadata, message, location):
     else:
         location['title'] = message.text
 
+    return location
+
 
 def clean_geolocate(message, dadata, location):
     geo_lat, geo_lon = message.json["location"]["latitude"], message.json["location"]["longitude"]
@@ -74,3 +76,5 @@ def clean_geolocate(message, dadata, location):
         location['address'] = f'{message.json["location"]["latitude"]}, ' \
                               f'{message.json["location"]["longitude"]}'
     location['location'] = message.json['location']
+
+    return location
