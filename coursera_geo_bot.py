@@ -1,9 +1,9 @@
 import json
 import uuid
-
 import telebot
 from telebot import types
 from telegram_bot_pagination import InlineKeyboardPaginator
+from haversine import haversine, Unit
 from dadata import Dadata
 from mytoken import BOT_TOKEN, DADATA_SECRET_KEY, DADATA_TOKEN
 from vars import DESCRIPTION, PUSHEEN
@@ -30,6 +30,7 @@ def create_user(_id, users):
 
 
 def check_locations(locations, bot, message):
+    """Проверка сохраненных местоположений"""
     if len(locations) == 0:
         msg = bot.send_message(
             message.chat.id,
@@ -39,6 +40,21 @@ def check_locations(locations, bot, message):
         )
         return True
     return False
+
+def get_near_locations(user_location, locations, radius):
+    """Возвращает массив ближайших локаций"""
+    near_locations = []
+    for key, location in locations:
+        if 'location' in location:
+            coord = (
+                float(location['location']['latitude']),
+                float(location['location']['longitude'])
+            )
+            dist = haversine(coord, user_location, unit=Unit.METERS)
+            if dist <= radius:
+                near_locations.append(location)
+
+    return near_locations
 
 
 def main():
@@ -101,8 +117,8 @@ def main():
             if result is not None:
                 location['address'] = result['result']
                 if result["geo_lat"] is not None and result["geo_lon"] is not None:
-                    location['location'] = {'latitude': result["geo_lat"],
-                                            'longitude': result["geo_lon"]}
+                    location['location'] = {'latitude': float(result["geo_lat"]),
+                                            'longitude': float(result["geo_lon"])}
             else:
                 location['title'] = message.text
             users[_id]['locations'][loc_id] = location
@@ -267,17 +283,36 @@ def main():
                 call.message.chat.id,
                 m_id
             )
-        send_location_page(call.message, page)
 
-    def send_location_page(message, page=1):
-        locations = [x for key, x in users[str(message.chat.id)]['locations'].items()]
+        str_user_location = call.data.split('#')[3]
+
+        if str_user_location == 'None':
+            send_location_page(call.message, page=page)
+        else:
+            user_location = (
+                float(str_user_location.split('*')[0]),
+                float(str_user_location.split('*')[1])
+            )
+
+            user_id = str(call.message.chat.id)
+            radius = users[user_id]['radius']
+
+            locations = users[user_id]['locations'].items()
+            locations = get_near_locations(user_location, locations, radius)
+
+            send_location_page(call.message, locations, page=page, user_location=str_user_location)
+
+    def send_location_page(message, locations=None, page=1, user_location=None):
+        locations = locations or [x for key, x in users[str(message.chat.id)]['locations'].items()]
         msg1, msg2 = print_location(message.chat.id, locations[page - 1])
 
         if len(locations) > 1:
             paginator = InlineKeyboardPaginator(
                 len(locations),
                 current_page=page,
-                data_pattern='location#{page}#' + str(msg1.message_id)
+                data_pattern='location#{page}#'
+                             f'{str(msg1.message_id)}#'
+                             f'{user_location}'
             )
 
             msg = msg2 or msg1
@@ -339,9 +374,26 @@ def main():
             radius_handler(message)
 
     @bot.callback_query_handler(func=lambda query: query.data == 'near')
-    def callback_handler(callback_query):
+    def callback_handler(query):
         """Вывод ближайших геопозиций"""
-        msg = bot.send_message(callback_query.message.chat.id, 'В  процессе реализации...')
+        user_id = str(query.message.chat.id)
+        radius = users[user_id]['radius']
+        user_location = (
+            query.message.reply_to_message.location.latitude,
+            query.message.reply_to_message.location.longitude
+        )
+
+        locations = users[user_id]['locations'].items()
+        locations = get_near_locations(user_location, locations, radius)
+
+        if len(locations) > 0:
+            str_user_location = f'{user_location[0]}*{user_location[1]}'
+            send_location_page(query.message, locations, user_location=str_user_location)
+        else:
+            bot.send_message(
+                query.message.chat.id,
+                'Ближайших геопозиций не обнаружено.'
+            )
 
     @bot.message_handler(commands=['secret'])
     def secret(message):
