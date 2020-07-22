@@ -1,61 +1,11 @@
 import json
 import uuid
 import telebot
-from telebot import types
 from telegram_bot_pagination import InlineKeyboardPaginator
-from haversine import haversine, Unit
 from dadata import Dadata
 from mytoken import BOT_TOKEN, DADATA_SECRET_KEY, DADATA_TOKEN
 from vars import DESCRIPTION, PUSHEEN
-
-
-def get_keyboard(row, buttons, callback_data):
-    """Инициализирует клавиатуру обработки геопозиуии от пользователя"""
-    keyboard = types.InlineKeyboardMarkup(row_width=row)
-    buttons = [types.InlineKeyboardButton(text=text, callback_data=data or text)
-               for text, data in zip(buttons, callback_data)]
-    keyboard.add(*buttons)
-    return keyboard
-
-
-def create_user(_id, users):
-    """Добавление пользователя в базу данных"""
-    if _id not in users:
-        users[str(_id)] = {
-            'locations': {},
-            'radius': 500
-        }
-        with open('db.json', 'w') as f:
-            json.dump(users, f)
-
-
-def check_locations(locations, bot, message):
-    """Проверка сохраненных местоположений"""
-    if len(locations) == 0:
-        msg = bot.send_message(
-            message.chat.id,
-            'Нет добавленных геолокаций.\n\n'
-            'Добавьте первую с помощью команды /add, '
-            'или прикрепив геопозицию.'
-        )
-        return True
-    return False
-
-def get_near_locations(user_location, locations, radius):
-    """Возвращает массив ближайших локаций"""
-    near_locations = []
-    for key, location in locations:
-        if 'location' in location:
-            coord = (
-                float(location['location']['latitude']),
-                float(location['location']['longitude'])
-            )
-            dist = haversine(coord, user_location, unit=Unit.METERS)
-            if dist <= radius:
-                near_locations.append(location)
-
-    return near_locations
-
+from data_process import *
 
 def main():
     bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
@@ -112,29 +62,13 @@ def main():
             'title': f'Геопозиция #{number+1}'
         }
 
+        # пользователь вводит адрес
         if message.content_type == 'text':
-            result = dadata.clean('address', message.text)
-            if result is not None:
-                location['address'] = result['result']
-                if result["geo_lat"] is not None and result["geo_lon"] is not None:
-                    location['location'] = {'latitude': float(result["geo_lat"]),
-                                            'longitude': float(result["geo_lon"])}
-            else:
-                location['title'] = message.text
-            users[_id]['locations'][loc_id] = location
+            users[_id]['locations'][loc_id] = clean_text(dadata, message, location)
 
+        # пользователь отправляет геопозицию
         elif message.content_type == 'location':
-            geo_lat, geo_lon = message.json["location"]["latitude"], message.json["location"]["longitude"]
-            result = dadata.geolocate(name='address', lat=geo_lat, lon=geo_lon)
-
-            if len(result) > 0:
-                location['address'] = result[0]['value']
-            else:
-                location['address'] = f'{message.json["location"]["latitude"]}, ' \
-                                      f'{message.json["location"]["longitude"]}'
-            location['location'] = message.json['location']
-
-            users[_id]['locations'][loc_id] = location
+            users[_id]['locations'][loc_id] = clean_geolocate(message, dadata, location)
 
         elif message.content_type == 'venue':
             location['title'] = message.json['venue']['title']
@@ -142,6 +76,7 @@ def main():
             location['location'] = message.json['location']
             users[_id]['locations'][loc_id] = location
 
+        # пользователь отправляет изображение
         elif message.content_type == 'photo':
             location['photo'] = message.json['photo']
             users[_id]['locations'][loc_id] = location
@@ -231,7 +166,8 @@ def main():
     def change_address(message, loc_id):
         """Изменение адреса"""
         if message.content_type == 'text':
-            users[str(message.from_user.id)]['locations'][loc_id]['address'] = message.text
+            location = users[str(message.from_user.id)]['locations'][loc_id]
+            clean_text(dadata, message, location)
             bot.send_message(message.chat.id, 'Адрес успешно изменен!')
         else:
             bot.send_message(message.chat.id, 'Что-то пошло не так :(')
@@ -249,7 +185,8 @@ def main():
     def change_location(message, loc_id):
         """Изменение геопозиции"""
         if message.content_type == 'location':
-            users[str(message.from_user.id)]['locations'][loc_id]['location'] = message.json['location']
+            location = users[str(message.from_user.id)]['locations'][loc_id]
+            clean_geolocate(message, dadata, location)
             bot.send_message(message.chat.id, 'Геопозиция успешно изменена!')
         elif message.content_type == 'venue':
             users[str(message.from_user.id)]['locations'][loc_id]['title'] = message.json['venue']['title']
