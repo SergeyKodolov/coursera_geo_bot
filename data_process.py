@@ -4,8 +4,8 @@ from dadata import Dadata
 from telebot import types
 from vars import DADATA_SECRET_KEY, DADATA_TOKEN
 
-dadata_secret_key = os.getenv('DADATA_SECRET_KEY') or DADATA_SECRET_KEY
-dadata_token = os.getenv('DADATA_TOKEN') or DADATA_TOKEN
+dadata_secret_key = os.getenv('DADATA_SECRET_KEY', DADATA_SECRET_KEY)
+dadata_token = os.getenv('DADATA_TOKEN', DADATA_TOKEN)
 dadata = Dadata(dadata_token, dadata_secret_key)
 
 
