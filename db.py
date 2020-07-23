@@ -27,6 +27,7 @@ def check_tables(conn):
             with open('create_tables.sql') as sql:
                 cur.execute(sql.read())
             conn.commit()
+            print('ok')
     except Exception as ex:
         print(ex)
 
