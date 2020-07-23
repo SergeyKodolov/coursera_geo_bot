@@ -8,6 +8,7 @@ def create_connection():
     if os.getenv('DATABASE_URL'):
         url = os.getenv('DATABASE_URL')
         conn = psycopg2.connect(url, sslmode='require')
+        print('ok')
     else:
         conn = psycopg2.connect(
             database="postgres",
@@ -21,10 +22,13 @@ def create_connection():
 
 def check_tables(conn):
     """Создание таблиц, если нет"""
-    with conn.cursor() as cur:
-        with open('create_tables.sql') as sql:
-            cur.execute(sql.read())
-        conn.commit()
+    try:
+        with conn.cursor() as cur:
+            with open('create_tables.sql') as sql:
+                cur.execute(sql.read())
+            conn.commit()
+    except Exception as ex:
+        print(ex)
 
 
 def create_user(conn, _id):
