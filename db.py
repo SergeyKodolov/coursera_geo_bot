@@ -38,11 +38,16 @@ def create_user(conn, _id):
         conn.commit()
 
 
-def create_location(conn, user_id, title, address, location, photo):
+def create_location(conn, user_id, title, address='null', location='null', photo='null'):
     """Создание местоположения"""
     with conn.cursor() as cur:
         sql = f"insert into locations (title, address, location, photo, user_id) " \
-              f"values ('{title}', '{address}', '{location}', '{photo}', '{user_id}') " \
+              f"values (" \
+              f"'{title}', " \
+              f"'{address or 'null'}', " \
+              f"'{location  or 'null'}', " \
+              f"'{photo  or 'null'}', " \
+              f"'{user_id}') " \
               f"RETURNING location_id"
         try:
             cur.execute(sql)
@@ -86,7 +91,7 @@ def update_location(conn, loc_id, title=None, address=None, location=None, photo
         conn.commit()
 
 
-def check_locations(conn, user_id):
+def are_there_locations(conn, user_id):
     """Проверка сохраненных местоположений"""
     with conn.cursor() as cur:
         sql = f'select count(*) from locations where user_id = {user_id}'
@@ -100,15 +105,33 @@ def check_locations(conn, user_id):
         count = result[0][0]
 
     if count > 0:
-        return False
-    return True
+        return True
+    return False
 
 
-def delete_user_locations(conn, user_id):
+def is_there_user(conn, user_id):
+    """Проверка сохраненных местоположений"""
+    with conn.cursor() as cur:
+        sql = f'select count(*) from users where user_id = {user_id}'
+
+        try:
+            cur.execute(sql)
+        except Exception as ex:
+            pass
+
+        result = cur.fetchall()
+        count = result[0][0]
+
+    if count == 1:
+        return True
+    return False
+
+
+def delete_user_data(conn, user_id):
     """Удаление местоположений пользователя"""
     with conn.cursor() as cur:
-        sql = f'delete from locations where user_id = {user_id}'
-
+        sql = f'delete from locations where user_id = {user_id};\n' \
+              f'delete from users where user_id = {user_id};'
         try:
             cur.execute(sql)
         except Exception as ex:

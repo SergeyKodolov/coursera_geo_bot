@@ -21,23 +21,23 @@ def get_keyboard(row, buttons, callback_data):
 def clean_text(message):
     """Возвращает местоположение по введенному тексту"""
     title = message.text
-    address = 'null'
-    location = 'null'
+    address = None
+    location = None
 
     result = dadata.clean('address', message.text)
     if result is not None:
         address = result['result']
         if result["geo_lat"] is not None and result["geo_lon"] is not None:
-            location = {'latitude': float(result["geo_lat"]),
-                        'longitude': float(result["geo_lon"])}
+            location = json.dumps(
+                {'latitude': float(result["geo_lat"]),
+                 'longitude': float(result["geo_lon"])}
+            )
 
-    return title, address, json.dumps(location)
+    return title, address, location
 
 
 def clean_geolocate(message):
-    address = 'null'
-    location = 'null'
-
+    """Возвращает адрес и локацию по координатам"""
     geo_lat, geo_lon = message.json["location"]["latitude"], message.json["location"]["longitude"]
     result = dadata.geolocate(name='address', lat=geo_lat, lon=geo_lon)
 
@@ -45,7 +45,7 @@ def clean_geolocate(message):
         address = result[0]['value']
     else:
         address = f'{message.json["location"]["latitude"]}, ' \
-                              f'{message.json["location"]["longitude"]}'
-    location = message.json['location']
+                  f'{message.json["location"]["longitude"]}'
+    location = json.dumps(message.json['location'])
 
-    return address, json.dumps(location)
+    return address, location

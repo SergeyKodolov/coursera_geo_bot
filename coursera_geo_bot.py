@@ -9,10 +9,32 @@ def main(conn):
     bot_token = os.getenv('BOT_TOKEN') or BOT_TOKEN
     bot = telebot.TeleBot(bot_token)
 
+    def is_there_user(message):
+        """Проверяет существование пользователя"""
+        if not db.is_there_user(conn, message.chat.id):
+            bot.send_message(
+                message.chat.id,
+                'Произошла ошибка :(\n\n'
+                'Воспользуйтесь командой /start'
+            )
+            return False
+        return True
+
+    def are_there_locations(message):
+        """Проверяет существование местоположений"""
+        if not db.are_there_locations(conn, message.chat.id):
+            bot.send_message(
+                message.chat.id,
+                EMPTY
+            )
+            return False
+        return True
+
     @bot.message_handler(commands=['start'])
     def welcome_handler(message):
         """Добавление нового пользователя в базу данных"""
         send_help(message)
+
         _id = str(message.from_user.id)
         db.create_user(conn, _id)
 
@@ -37,40 +59,50 @@ def main(conn):
     @bot.callback_query_handler(func=lambda query: query.data == 'add')
     def callback_handler(callback_query):
         """Обработка добавления геопозиции"""
+        if not is_there_user(callback_query.message):
+            return
+
         new_location(callback_query.message.reply_to_message)
 
     @bot.message_handler(commands=['add'])
     def add_user_locations(message):
         """Обработка команды добавления геопозиции"""
+        if not is_there_user(message):
+            return
+
         msg = bot.send_message(message.chat.id, 'Введите адрес, отправьте геопозицию или прикрепите фото:')
         bot.register_next_step_handler(msg, new_location)
 
     def new_location(message):
         """Создание новой геопозиции"""
         _id = str(message.from_user.id)
-        title, address, location, photo = 'Геопозиция', 'null', 'null', 'null'
+        title = 'Геопозиция'
 
         # пользователь вводит адрес
         if message.content_type == 'text':
             title, address, location = clean_text(message)
+            loc_id = db.create_location(conn, _id, title, address, location)
 
         # пользователь отправляет геопозицию
         elif message.content_type == 'location':
             address, location = clean_geolocate(message)
+            loc_id = db.create_location(conn, _id, title, address, location)
 
         elif message.content_type == 'venue':
             title = message.json['venue']['title']
             address = message.json['venue']['address']
             location = json.dumps(message.json['location'])
+            loc_id = db.create_location(conn, _id, title, address, location)
 
         # пользователь отправляет изображение
         elif message.content_type == 'photo':
             photo = json.dumps(message.json['photo'][0])
+            loc_id = db.create_location(conn, _id, title, photo=photo)
 
         else:
             add_user_locations(message)
+            return
 
-        loc_id = db.create_location(conn, _id, title, address, location, photo)
         menu_location(message, loc_id)
 
     def menu_location(message, loc_id):
@@ -127,6 +159,9 @@ def main(conn):
     )
     def callback_handler(query):
         """Редактирование геопозиции"""
+        if not are_there_locations(query.message):
+            return
+
         data, loc_id = query.data.split('#')
         if data == 'title':
             msg = bot.send_message(query.message.chat.id, 'Введите новое название:\n')
@@ -198,13 +233,7 @@ def main(conn):
     @bot.message_handler(commands=['list'])
     def send_user_locations(message):
         """Вывод списка геопозиций пользователя"""
-        _id = str(message.from_user.id)
-
-        if db.check_locations(conn, _id):
-            bot.send_message(
-                message.chat.id,
-                EMPTY
-            )
+        if not are_there_locations(message):
             return
 
         send_location_page(message)
@@ -212,6 +241,9 @@ def main(conn):
     @bot.callback_query_handler(func=lambda call: call.data.split('#')[0] == 'location')
     def location_page_callback(call):
         """Выводит местоположение, выбранное пользователем"""
+        if not are_there_locations(call.message):
+            return
+
         page = int(call.data.split('#')[1])
         msg1_id = int(call.data.split('#')[2])
         msg2_id = call.message.message_id
@@ -241,6 +273,9 @@ def main(conn):
     @bot.callback_query_handler(func=lambda query: query.data == 'near')
     def callback_handler(query):
         """Вывод ближайших геопозиций"""
+        if not are_there_locations(query.message):
+            return
+
         user_id = str(query.message.chat.id)
         user_location = (
             query.message.reply_to_message.location.latitude,
@@ -290,18 +325,12 @@ def main(conn):
     @bot.message_handler(commands=['reset'])
     def add_user_locations(message):
         """Обработка команды очистки данных пользователя"""
-        _id = str(message.from_user.id)
-
-        if db.check_locations(conn, _id):
-            bot.send_message(
-                message.chat.id,
-                EMPTY
-            )
+        if not is_there_user(message):
             return
 
         bot.send_message(
             message.chat.id,
-            'Удалить все сохраненные геопозиции без возможности восстановления?',
+            'Удалить все сохраненные данные без возможности восстановления?',
             reply_to_message_id=message.message_id,
             reply_markup=get_keyboard(
                 2,
@@ -312,11 +341,14 @@ def main(conn):
 
     @bot.callback_query_handler(func=lambda query: query.data == 'yes')
     def callback_handler(callback_query):
-        """Удаляет геопозиции пользователя"""
+        """Удаляет данных пользователя"""
         _id = str(callback_query.from_user.id)
-        db.delete_user_locations(conn, _id)
+        db.delete_user_data(conn, _id)
         bot.delete_message(callback_query.message.chat.id, callback_query.message.message_id)
-        bot.send_message(callback_query.message.chat.id, 'Сохраненные геопозиции успешно удалены!')
+        bot.send_message(
+            callback_query.message.chat.id,
+            'Сохраненные данные успешно удалены!\n\n'
+            'Чтобы продолжить работу введите /start')
 
     @bot.callback_query_handler(func=lambda query: query.data == 'no')
     def callback_handler(callback_query):
@@ -325,6 +357,9 @@ def main(conn):
 
     @bot.message_handler(commands=['setradius'])
     def radius_handler(message):
+        if not is_there_user(message):
+            return
+
         """Обработчик команды изменения радиуса"""
         msg = bot.send_message(message.chat.id, 'Укажите расстояние (10 - 15000):')
         bot.register_next_step_handler(msg, set_radius)
@@ -335,7 +370,7 @@ def main(conn):
             if 10 <= radius <= 15000:
                 _id = str(message.from_user.id)
                 db.update_radius(conn, _id, radius)
-                bot.send_message(message.chat.id, f'Установлен радиус {radius} метров')
+                bot.send_message(message.chat.id, f'Установлен радиус {radius} м')
             else:
                 radius_handler(message)
         except Exception:
