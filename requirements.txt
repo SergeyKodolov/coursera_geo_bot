@@ -3,6 +3,7 @@ chardet==3.0.4
 dadata==0.3.0
 haversine==2.2.0
 idna==2.10
+psycopg2-binary==2.8.5
 pyTelegramBotAPI==3.7.2
 python-telegram-bot-pagination==0.0.1
 requests==2.24.0

@@ -1,28 +1,20 @@
-import json
-import uuid
 import telebot
 from telegram_bot_pagination import InlineKeyboardPaginator
-from dadata import Dadata
-from mytoken import BOT_TOKEN, DADATA_SECRET_KEY, DADATA_TOKEN
-from vars import DESCRIPTION, PUSHEEN
+from vars import BOT_TOKEN, DESCRIPTION, PUSHEEN, EMPTY
 from data_process import *
+import db
 
-def main():
-    bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
-    dadata = Dadata(DADATA_TOKEN, DADATA_SECRET_KEY)
 
-    try:
-        with open('db.json') as f:
-            users = json.load(f)
-    except:
-        users = {}
+def main(conn):
+    bot_token = os.getenv('BOT_TOKEN') or BOT_TOKEN
+    bot = telebot.TeleBot(bot_token)
 
     @bot.message_handler(commands=['start'])
     def welcome_handler(message):
         """Добавление нового пользователя в базу данных"""
         send_help(message)
         _id = str(message.from_user.id)
-        create_user(_id, users)
+        db.create_user(conn, _id)
 
     @bot.message_handler(commands=['help'])
     def send_help(message):
@@ -32,7 +24,7 @@ def main():
     @bot.message_handler(content_types=['location', 'venue'])
     def location_handler(message):
         """Обработка сообщения с геопозицией"""
-        msg = bot.send_message(
+        bot.send_message(
             message.chat.id, 'Выберите действие:',
             reply_to_message_id=message.message_id,
             reply_markup=get_keyboard(
@@ -56,41 +48,35 @@ def main():
     def new_location(message):
         """Создание новой геопозиции"""
         _id = str(message.from_user.id)
-        loc_id = str(uuid.uuid4())
-        number = len(users[_id]['locations'])
-        location = {
-            'title': f'Геопозиция #{number+1}'
-        }
+        title, address, location, photo = 'Геопозиция', 'null', 'null', 'null'
 
         # пользователь вводит адрес
         if message.content_type == 'text':
-            users[_id]['locations'][loc_id] = clean_text(dadata, message, location)
+            title, address, location = clean_text(message)
 
         # пользователь отправляет геопозицию
         elif message.content_type == 'location':
-            users[_id]['locations'][loc_id] = clean_geolocate(message, dadata, location)
+            address, location = clean_geolocate(message)
 
         elif message.content_type == 'venue':
-            location['title'] = message.json['venue']['title']
-            location['address'] = message.json['venue']['address']
-            location['location'] = message.json['location']
-            users[_id]['locations'][loc_id] = location
+            title = message.json['venue']['title']
+            address = message.json['venue']['address']
+            location = json.dumps(message.json['location'])
 
         # пользователь отправляет изображение
         elif message.content_type == 'photo':
-            location['photo'] = message.json['photo']
-            users[_id]['locations'][loc_id] = location
+            photo = json.dumps(message.json['photo'][0])
 
         else:
             add_user_locations(message)
 
+        loc_id = db.create_location(conn, _id, title, address, location, photo)
         menu_location(message, loc_id)
 
     def menu_location(message, loc_id):
         """Конфигурация геопозиции"""
         _id = str(message.from_user.id)
-        location = users[_id]['locations'][loc_id]
-        msg1, msg2 = print_location(message.chat.id, location)
+        msg1, msg2 = print_location(message.chat.id, loc_id)
         msg = msg2 or msg1
         bot.edit_message_reply_markup(
             message.chat.id,
@@ -108,25 +94,26 @@ def main():
             )
         )
 
-    def print_location(chat_id, location):
+    def print_location(chat_id, loc_id):
         """Вывод геопозиции"""
-        if 'photo' in location:
+        title, address, location, photo = db.get_location(conn, loc_id)
+        if photo:
             msg1 = bot.send_photo(
                 chat_id,
-                location['photo'][0]['file_id'],
-                location['title']
+                photo['file_id'],
+                title
             )
 
         else:
-            msg1 = bot.send_message(chat_id, location['title'])
+            msg1 = bot.send_message(chat_id, title)
 
-        if 'location' in location:
+        if location:
             msg2 = bot.send_venue(
                 chat_id,
-                location['location']['latitude'],
-                location['location']['longitude'],
-                location['title'],
-                location['address']
+                location['latitude'],
+                location['longitude'],
+                title,
+                address
             )
 
         else:
@@ -157,7 +144,8 @@ def main():
     def change_title(message, loc_id):
         """Изменение названия"""
         if message.content_type == 'text':
-            users[str(message.from_user.id)]['locations'][loc_id]['title'] = message.text
+            title = message.text
+            db.update_location(conn, loc_id, title)
             bot.send_message(message.chat.id, 'Название успешно изменено!')
         else:
             bot.send_message(message.chat.id, 'Что-то пошло не так :(')
@@ -166,8 +154,11 @@ def main():
     def change_address(message, loc_id):
         """Изменение адреса"""
         if message.content_type == 'text':
-            location = users[str(message.from_user.id)]['locations'][loc_id]
-            clean_text(dadata, message, location)
+            title, address, location = clean_text(message)
+            address = None if address == 'null' else address
+            location = None if location == 'null' else location
+
+            db.update_location(conn, loc_id, title, address, location)
             bot.send_message(message.chat.id, 'Адрес успешно изменен!')
         else:
             bot.send_message(message.chat.id, 'Что-то пошло не так :(')
@@ -176,7 +167,8 @@ def main():
     def change_photo(message, loc_id):
         """Изменение изображения"""
         if message.content_type == 'photo':
-            users[str(message.from_user.id)]['locations'][loc_id]['photo'] = message.json['photo']
+            photo = json.dumps(message.json['photo'][0])
+            db.update_location(conn, loc_id, photo=photo)
             bot.send_message(message.chat.id, 'Изображение успешно изменено!')
         else:
             bot.send_message(message.chat.id, 'Что-то пошло не так :(')
@@ -185,14 +177,20 @@ def main():
     def change_location(message, loc_id):
         """Изменение геопозиции"""
         if message.content_type == 'location':
-            location = users[str(message.from_user.id)]['locations'][loc_id]
-            clean_geolocate(message, dadata, location)
+            address, location = clean_geolocate(message)
+            address = None if address == 'null' else address
+            location = None if location == 'null' else location
+
+            db.update_location(conn, loc_id, address=address, location=location)
             bot.send_message(message.chat.id, 'Геопозиция успешно изменена!')
+
         elif message.content_type == 'venue':
-            users[str(message.from_user.id)]['locations'][loc_id]['title'] = message.json['venue']['title']
-            users[str(message.from_user.id)]['locations'][loc_id]['address'] = message.json['venue']['address']
-            users[str(message.from_user.id)]['locations'][loc_id]['location'] = message.json['location']
+            title = message.json['venue']['title']
+            address = message.json['venue']['address']
+            location = json.dumps(message.json['location'])
+            db.update_location(conn, loc_id, title, address, location)
             bot.send_message(message.chat.id, 'Геопозиция успешно изменена!')
+
         else:
             bot.send_message(message.chat.id, 'Что-то пошло не так :(')
         menu_location(message, loc_id)
@@ -201,15 +199,19 @@ def main():
     def send_user_locations(message):
         """Вывод списка геопозиций пользователя"""
         _id = str(message.from_user.id)
-        locations = users[_id]['locations']
 
-        if check_locations(locations, bot, message):
+        if db.check_locations(conn, _id):
+            bot.send_message(
+                message.chat.id,
+                EMPTY
+            )
             return
 
         send_location_page(message)
 
     @bot.callback_query_handler(func=lambda call: call.data.split('#')[0] == 'location')
-    def characters_page_callback(call):
+    def location_page_callback(call):
+        """Выводит местоположение, выбранное пользователем"""
         page = int(call.data.split('#')[1])
         msg1_id = int(call.data.split('#')[2])
         msg2_id = call.message.message_id
@@ -226,26 +228,52 @@ def main():
         if str_user_location == 'None':
             send_location_page(call.message, page=page)
         else:
+            user_id = str(call.message.chat.id)
             user_location = (
                 float(str_user_location.split('*')[0]),
                 float(str_user_location.split('*')[1])
             )
 
-            user_id = str(call.message.chat.id)
-            radius = users[user_id]['radius']
+            near_locations_ids = process_near_locations(user_id, user_location)
 
-            locations = users[user_id]['locations'].items()
-            locations = get_near_locations(user_location, locations, radius)
+            send_location_page(call.message, near_locations_ids, page=page, user_location=str_user_location)
 
-            send_location_page(call.message, locations, page=page, user_location=str_user_location)
+    @bot.callback_query_handler(func=lambda query: query.data == 'near')
+    def callback_handler(query):
+        """Вывод ближайших геопозиций"""
+        user_id = str(query.message.chat.id)
+        user_location = (
+            query.message.reply_to_message.location.latitude,
+            query.message.reply_to_message.location.longitude
+        )
 
-    def send_location_page(message, locations=None, page=1, user_location=None):
-        locations = locations or [x for key, x in users[str(message.chat.id)]['locations'].items()]
-        msg1, msg2 = print_location(message.chat.id, locations[page - 1])
+        near_locations_ids = process_near_locations(user_id, user_location)
 
-        if len(locations) > 1:
+        if len(near_locations_ids) > 0:
+            str_user_location = f'{user_location[0]}*{user_location[1]}'
+            send_location_page(query.message, near_locations_ids, user_location=str_user_location)
+        else:
+            bot.send_message(
+                query.message.chat.id,
+                'Ближайших геопозиций не обнаружено.'
+            )
+
+    def process_near_locations(user_id, user_location):
+        """Формирование списка ближайших местоположений"""
+        radius = db.get_radius(conn, user_id)
+
+        locations_ids = db.get_locations_ids(conn, user_id)
+        near_locations_ids = db.get_near_locations_ids(conn, user_location, locations_ids, radius)
+        return near_locations_ids
+
+    def send_location_page(message, locations_ids=None, page=1, user_location=None):
+        user_id = message.chat.id
+        locations_ids = locations_ids or db.get_locations_ids(conn, user_id)
+        msg1, msg2 = print_location(message.chat.id, locations_ids[page - 1])
+
+        if len(locations_ids) > 1:
             paginator = InlineKeyboardPaginator(
-                len(locations),
+                len(locations_ids),
                 current_page=page,
                 data_pattern='location#{page}#'
                              f'{str(msg1.message_id)}#'
@@ -263,11 +291,15 @@ def main():
     def add_user_locations(message):
         """Обработка команды очистки данных пользователя"""
         _id = str(message.from_user.id)
-        locations = users[_id]['locations']
-        if check_locations(locations, bot, message):
+
+        if db.check_locations(conn, _id):
+            bot.send_message(
+                message.chat.id,
+                EMPTY
+            )
             return
 
-        msg = bot.send_message(
+        bot.send_message(
             message.chat.id,
             'Удалить все сохраненные геопозиции без возможности восстановления?',
             reply_to_message_id=message.message_id,
@@ -282,8 +314,7 @@ def main():
     def callback_handler(callback_query):
         """Удаляет геопозиции пользователя"""
         _id = str(callback_query.from_user.id)
-        del users[_id]
-        create_user(_id, users)
+        db.delete_user_locations(conn, _id)
         bot.delete_message(callback_query.message.chat.id, callback_query.message.message_id)
         bot.send_message(callback_query.message.chat.id, 'Сохраненные геопозиции успешно удалены!')
 
@@ -295,53 +326,30 @@ def main():
     @bot.message_handler(commands=['setradius'])
     def radius_handler(message):
         """Обработчик команды изменения радиуса"""
-        msg = bot.send_message(message.chat.id, 'Укажите расстояние (10 - 1500):')
+        msg = bot.send_message(message.chat.id, 'Укажите расстояние (10 - 15000):')
         bot.register_next_step_handler(msg, set_radius)
 
     def set_radius(message):
         try:
             radius = int(message.text)
-            if 10 <= radius <= 1500:
+            if 10 <= radius <= 15000:
                 _id = str(message.from_user.id)
-                users[_id]['radius'] = radius
+                db.update_radius(conn, _id, radius)
                 bot.send_message(message.chat.id, f'Установлен радиус {radius} метров')
             else:
                 radius_handler(message)
         except Exception:
             radius_handler(message)
 
-    @bot.callback_query_handler(func=lambda query: query.data == 'near')
-    def callback_handler(query):
-        """Вывод ближайших геопозиций"""
-        user_id = str(query.message.chat.id)
-        radius = users[user_id]['radius']
-        user_location = (
-            query.message.reply_to_message.location.latitude,
-            query.message.reply_to_message.location.longitude
-        )
-
-        locations = users[user_id]['locations'].items()
-        locations = get_near_locations(user_location, locations, radius)
-
-        if len(locations) > 0:
-            str_user_location = f'{user_location[0]}*{user_location[1]}'
-            send_location_page(query.message, locations, user_location=str_user_location)
-        else:
-            bot.send_message(
-                query.message.chat.id,
-                'Ближайших геопозиций не обнаружено.'
-            )
-
     @bot.message_handler(commands=['secret'])
     def secret(message):
         """Секретный метод"""
-        msg = bot.send_sticker(message.chat.id, PUSHEEN['surprised'])
+        bot.send_sticker(message.chat.id, PUSHEEN['surprised'])
 
-    bot.infinity_polling(True)
-
-    with open('db.json', 'w') as f:
-        json.dump(users, f)
+    bot.polling()
 
 
 if __name__ == '__main__':
-    main()
+    with db.create_connection() as conn:
+        db.check_tables(conn)
+        main(conn)

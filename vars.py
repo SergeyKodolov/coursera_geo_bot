@@ -13,6 +13,14 @@ DESCRIPTION = '''
     /help - справка
 '''
 
+EMPTY = 'Нет добавленных геолокаций.\n\n' \
+        'Добавьте первую с помощью команды /add, ' \
+        'или прикрепив геопозицию.'
+
 PUSHEEN = {
     'surprised': 'CAACAgIAAxkBAAEBE0FfFYmZEq6Dk_dZdh9K7dMa4XsBXwACIhIAAujW4hI2uqloM5rL2hoE'
 }
+
+BOT_TOKEN = ''
+DADATA_TOKEN = ''
+DADATA_SECRET_KEY = ''
