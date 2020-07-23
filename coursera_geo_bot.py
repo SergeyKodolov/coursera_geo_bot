@@ -10,6 +10,7 @@ from data_process import *
 
 # Открываем соединение с базой данных
 conn = db.create_connection()
+db.check_tables(conn)
 
 # Инициализируем telebot-a
 bot_token = os.getenv('BOT_TOKEN', BOT_TOKEN)

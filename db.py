@@ -8,7 +8,7 @@ def create_connection():
     if os.getenv('DATABASE_URL'):
         url = os.getenv('DATABASE_URL')
         conn = psycopg2.connect(url, sslmode='require')
-        print('ok')
+        print('db connection: ok')
     else:
         conn = psycopg2.connect(
             database="postgres",
@@ -27,7 +27,7 @@ def check_tables(conn):
             with open('create_tables.sql') as sql:
                 cur.execute(sql.read())
             conn.commit()
-            print('ok')
+            print('create tables: ok')
     except Exception as ex:
         print(ex)
 
