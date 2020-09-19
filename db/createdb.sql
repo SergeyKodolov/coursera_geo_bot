@@ -4,7 +4,7 @@ create table if not exists users (
 );
 
 create table if not exists locations (
-    location_id serial primary key,
+    location_id {type} primary key {autoincrement},
     title varchar(150) not null default 'Геопозиция',
     address varchar(500),
     location json,
