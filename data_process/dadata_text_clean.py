@@ -9,7 +9,7 @@ dadata = Dadata(DADATA_TOKEN)
 
 
 def clean_text(text: str) -> db.Location:
-    """Возвращает местоположение по введенному тексту"""
+    """Возвращает геопозицию по введенному тексту"""
     location = db.Location(title=text)
 
     result = dadata.suggest('address', text)
@@ -28,7 +28,7 @@ def clean_text(text: str) -> db.Location:
 
 
 def clean_geolocate(message_location: Dict) -> db.Location:
-    """Возвращает адрес и локацию по координатам"""
+    """Возвращает адрес и геопозицию по координатам"""
     geo_lat, geo_lon = message_location["latitude"], message_location["longitude"]
     result = dadata.geolocate(name='address', lat=geo_lat, lon=geo_lon)
 

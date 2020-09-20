@@ -18,10 +18,15 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 
 
+# Валидация запросов пользователя
+
 def validation_process(user_request, valid_func):
     """Процесс проверки запроса пользователя"""
-    chat_id = user_request.chat.id if type(user_request) is types.Message \
-        else user_request.message.chat.id
+    if type(user_request) is types.Message:
+        chat_id = user_request.chat.id
+    else:
+        chat_id = user_request.message.chat.id
+
     error = valid_func(chat_id)
     if error:
         bot.send_message(**error)
@@ -49,18 +54,26 @@ def locations_validation(func):
     return wrapper
 
 
-def new_location_handler(message: types.Message):
-    """Обработка добавления геопозиции"""
-    new_loc_id = location_process.new_location(message)
-    if new_loc_id > -1:
-        msgs = print_location(message, new_loc_id)
-        print_menu(message, new_loc_id, msgs)
-    else:
-        add_user_location(message)
+def location_validation(func):
+    """Проверка существования геопозиции при вызове callback-кнопки"""
 
+    def wrapper(user_request: types.CallbackQuery):
+        chat_id = user_request.message.chat.id
+        loc_id = user_request.data.split('#')[1]
+        error = request_validation.check_location(chat_id, loc_id)
+        if error:
+            delete_location_page(user_request)
+            bot.send_message(**error)
+        else:
+            return func(user_request)
+
+    return wrapper
+
+
+# Печать сообщений
 
 def print_location(message: types.Message, loc_id: int) -> List[types.Message]:
-    """Вывод меню настроек геопозиции"""
+    """Вывод карточки геопозиции"""
     reply_messages = location_process.print_location(loc_id)
     chat_id = message.chat.id
 
@@ -78,15 +91,88 @@ def print_location(message: types.Message, loc_id: int) -> List[types.Message]:
 
 
 def print_menu(message: types.Message, loc_id: int, send_msgs: List):
-    """Вывод кнопок меню"""
+    """Вывод кнопок меню для карточки геопозиции"""
+    msg1_id = -1
+    if len(send_msgs) == 2:
+        msg1_id = send_msgs[0].message_id
+
     bot.edit_message_reply_markup(
         message.chat.id,
         send_msgs[-1].message_id,
-        reply_markup=location_process.get_location_menu(loc_id)
+        reply_markup=location_process.get_location_menu(loc_id, msg1_id)
+    )
+
+
+def delete_location_page(callback: types.CallbackQuery):
+    """Удаление текущей карточки геопозиции"""
+    chat_id = callback.message.chat.id
+    msg1_id = int(callback.data.split('#')[2])
+    if msg1_id != -1:
+        bot.delete_message(chat_id, msg1_id)
+    msg2_id = callback.message.message_id
+    bot.delete_message(chat_id, msg2_id)
+
+
+def send_location_page(message, locations_ids=None, page=1, user_location=None):
+    """Выводит карточку геопозиции из списка геопозиций"""
+    user_id = message.chat.id
+    locations_ids = locations_ids or location_process.get_location_ids(user_id)
+    if locations_ids and len(locations_ids) < page:
+        page = 1
+    msgs = print_location(message, locations_ids[page - 1])
+    print_paginator(msgs, page, user_location, locations_ids)
+
+
+def print_paginator(msgs: List[types.Message], page: int, user_location: str, locations_ids: List[int]):
+    """Выводит переключатель карточек геопозиций"""
+    if len(locations_ids) > 1:
+        msg1_id = msgs[0].message_id if len(msgs) != 1 else -1
+
+        paginator = InlineKeyboardPaginator(
+            len(locations_ids),
+            current_page=page,
+            data_pattern='location#{page}#'
+                         f'{msg1_id}#'
+                         f'{user_location}'
+        )
+
+        bot.edit_message_reply_markup(
+            msgs[-1].chat.id,
+            msgs[-1].message_id,
+            reply_markup=paginator.markup,
+        )
+
+
+def print_requested_page(callback: types.CallbackQuery):
+    """Выводит запрашиваемую карточку геопозиции из списка всех"""
+    str_user_location = callback.data.split('#')[3]
+    page = int(callback.data.split('#')[1])
+
+    if str_user_location == 'None':
+        send_location_page(callback.message, page=page)
+    else:
+        print_requested_page_near(callback, str_user_location, page)
+
+
+def print_requested_page_near(callback: types.CallbackQuery, user_loc: str, page: int):
+    """Выводит запрашиваемую карточку из списка ближайших"""
+    user_id = str(callback.message.chat.id)
+    user_location = (
+        float(user_loc.split('*')[0]),
+        float(user_loc.split('*')[1])
+    )
+
+    near_locations_ids = near_location_process.get_ids(user_id, user_location)
+    send_location_page(
+        callback.message,
+        near_locations_ids,
+        page=page,
+        user_location=user_loc
     )
 
 
 # Описание хэндлеров
+
 @bot.message_handler(commands=['start'])
 def welcome_handler(message: types.Message):
     """Добавление нового пользователя в базу данных"""
@@ -102,13 +188,13 @@ def help_handler(message: types.Message):
 
 @bot.message_handler(content_types=['location', 'venue'])
 def location_handler(message: types.Message):
-    """Ответ на геопозицию"""
+    """Ответ на сообщение пользователя с геопозицией"""
     bot.send_message(
         message.chat.id, 'Выберите действие:',
         reply_to_message_id=message.message_id,
         reply_markup=keyboard.get_keyboard(
             2,
-            ['Добавить локацию', 'Показать ближайшие'],
+            ['Добавить геопозицию', 'Показать ближайшие'],
             ['add', 'near']
         )
     )
@@ -132,14 +218,26 @@ def add_user_location(message: types.Message):
     bot.register_next_step_handler(msg, new_location_handler)
 
 
+def new_location_handler(message: types.Message):
+    """Обработка добавления геопозиции"""
+    new_loc_id = location_process.new_location(message)
+    if new_loc_id > -1:
+        msgs = print_location(message, new_loc_id)
+        print_menu(message, new_loc_id, msgs)
+    else:
+        add_user_location(message)
+
+
 @bot.callback_query_handler(
     func=lambda query:
     query.data.split('#')[0] in ['title', 'address', 'photo', 'position']
 )
+@user_validation
 @locations_validation
+@location_validation
 def callback_handler(callback_query: types.CallbackQuery):
     """Редактирование геопозиции"""
-    data, loc_id = callback_query.data.split('#')
+    data, loc_id, msg1_id = callback_query.data.split('#')
 
     text = {
         'title': 'Введите новое название:\n',
@@ -172,7 +270,26 @@ def change_information(message: types.Message, loc_id: int, data: str):
         bot.send_message(message.chat.id, 'Что-то пошло не так :(')
 
 
+@bot.callback_query_handler(
+    func=lambda query:
+    query.data.split('#')[0] == 'delete'
+)
+@user_validation
+@locations_validation
+@location_validation
+def callback_handler(callback_query: types.CallbackQuery):
+    """Запрос на удаление геопозиции"""
+    chat_id = callback_query.message.chat.id
+    message_id = callback_query.message.message_id
+    loc_id = callback_query.data.split('#')[1]
+    response = location_process.delete_location(loc_id)
+    if response:
+        delete_location_page(callback_query)
+        bot.send_message(chat_id, response)
+
+
 @bot.message_handler(commands=['list'])
+@user_validation
 @locations_validation
 def send_user_locations(message: types.Message):
     """Вывод списка геопозиций пользователя"""
@@ -180,55 +297,16 @@ def send_user_locations(message: types.Message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.split('#')[0] == 'location')
+@user_validation
 @locations_validation
 def location_page_callback(call: types.CallbackQuery):
-    """Выводит местоположение, выбранное пользователем"""
-    delete_current_page(call)
+    """Выводит карточку геопозиции, выбранную пользователем"""
+    delete_location_page(call)
     print_requested_page(call)
 
 
-def delete_current_page(callback: types.CallbackQuery):
-    """Удаление текущей страницы списка геопозиций"""
-    msg1_id = int(callback.data.split('#')[2])
-    msg2_id = callback.message.message_id
-
-    ids = [msg1_id] if msg1_id == msg2_id else [msg1_id, msg2_id]
-    for m_id in ids:
-        bot.delete_message(
-            callback.message.chat.id,
-            m_id
-        )
-
-
-def print_requested_page(callback: types.CallbackQuery):
-    """Выводит запрашиваемую карточку геопозиции из списка все"""
-    str_user_location = callback.data.split('#')[3]
-    page = int(callback.data.split('#')[1])
-
-    if str_user_location == 'None':
-        send_location_page(callback.message, page=page)
-    else:
-        print_requested_page_near(callback, str_user_location, page)
-
-
-def print_requested_page_near(callback: types.CallbackQuery, user_loc: str, page: int):
-    """Выводит запрашиваемую страницу из списка ближайших"""
-    user_id = str(callback.message.chat.id)
-    user_location = (
-        float(user_loc.split('*')[0]),
-        float(user_loc.split('*')[1])
-    )
-
-    near_locations_ids = near_location_process.get_ids(user_id, user_location)
-    send_location_page(
-        callback.message,
-        near_locations_ids,
-        page=page,
-        user_location=user_loc
-    )
-
-
 @bot.callback_query_handler(func=lambda query: query.data == 'near')
+@user_validation
 @locations_validation
 def callback_handler(query):
     """Вывод ближайших геопозиций"""
@@ -246,32 +324,6 @@ def callback_handler(query):
         bot.send_message(
             query.message.chat.id,
             'Ближайших геопозиций не обнаружено.'
-        )
-
-
-def send_location_page(message, locations_ids=None, page=1, user_location=None):
-    """Выводит страницу из списка локаций"""
-    user_id = message.chat.id
-    locations_ids = locations_ids or location_process.get_location_ids(user_id)
-    msgs = print_location(message, locations_ids[page - 1])
-    print_paginator(msgs, page, user_location, locations_ids)
-
-
-def print_paginator(msgs: List[types.Message], page: int, user_location: str, locations_ids: List[int]):
-    """Выводит переключатель страниц"""
-    if len(locations_ids) > 1:
-        paginator = InlineKeyboardPaginator(
-            len(locations_ids),
-            current_page=page,
-            data_pattern='location#{page}#'
-                         f'{str(msgs[0].message_id)}#'
-                         f'{user_location}'
-        )
-
-        bot.edit_message_reply_markup(
-            msgs[-1].chat.id,
-            msgs[-1].message_id,
-            reply_markup=paginator.markup,
         )
 
 

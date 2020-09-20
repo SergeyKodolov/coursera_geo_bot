@@ -40,7 +40,7 @@ def new_location(message: types.Message) -> int:
 
 
 def print_location(loc_id: int) -> Tuple[List, List]:
-    """Вывод геопозиции"""
+    """Подготовка данных для карточки геопозиции"""
     location = db.get_location(loc_id)
     if location.photo:
         msg1 = [
@@ -63,18 +63,20 @@ def print_location(loc_id: int) -> Tuple[List, List]:
     return msg1, msg2
 
 
-def get_location_menu(loc_id: int) -> types.InlineKeyboardMarkup:
-    """Меню геопозиции"""
+def get_location_menu(loc_id: int, msg1_id: int) -> types.InlineKeyboardMarkup:
+    """Клавиатура для редактирования геопозиции"""
     return keyboard.get_keyboard(
         1,
         ['Изменить название',
          'Изменить адрес',
          'Изменить изображение',
-         'Изменить геопозицию'],
-        [f'title#{loc_id}',
-         f'address#{loc_id}',
-         f'photo#{loc_id}',
-         f'position#{loc_id}']
+         'Изменить геопозицию',
+         'Удалить'],
+        [f'title#{loc_id}#{msg1_id}',
+         f'address#{loc_id}#{msg1_id}',
+         f'photo#{loc_id}#{msg1_id}',
+         f'position#{loc_id}#{msg1_id}',
+         f'delete#{loc_id}#{msg1_id}']
     )
 
 
@@ -113,6 +115,12 @@ def change_location(loc_id: int, message: types.Message) -> str:
 
     db.update_location(loc_id, location)
     return 'Геопозиция успешно изменена!'
+
+
+def delete_location(loc_id: int) -> str:
+    """Удаление геопозиции"""
+    db.delete_location(loc_id)
+    return f'Геопозиция {loc_id} успешно удалена!'
 
 
 def get_location_ids(_id: int) -> List[int]:

@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from typing import List
 
 import psycopg2
-from haversine import haversine, Unit
-
 import sqlite3
 
 
@@ -72,7 +70,7 @@ def create_location(user_id: int, location: Location) -> int:
 
 
 def create_location_sqlite(user_id: int, location: Location) -> int:
-    """Создание местоположения"""
+    """Создание местоположения SQLite"""
     sql = f"INSERT INTO locations (title, address, location, photo, user_id) " \
           f"VALUES (" \
           f"'{location.title}', " \
@@ -93,7 +91,7 @@ def create_location_sqlite(user_id: int, location: Location) -> int:
 
 
 def create_location_postgres(user_id: int, location: Location) -> int:
-    """Создание местоположения"""
+    """Создание местоположения PostgreSQL"""
     sql = f"INSERT INTO locations (title, address, location, photo, user_id) " \
           f"VALUES (" \
           f"'{location.title}', " \
@@ -159,6 +157,16 @@ def update_location(loc_id: int, location: Location):
     conn.commit()
 
 
+def delete_location(loc_id: int):
+    """Удаление местоположения"""
+    sql = f'DELETE FROM locations WHERE location_id = {loc_id}'
+    try:
+        cursor.execute(sql)
+        conn.commit()
+    except Exception as ex:
+        print(ex)
+
+
 def are_there_locations(user_id: int) -> bool:
     """Проверка сохраненных местоположений"""
     sql = f'SELECT COUNT(*) FROM locations WHERE user_id = {user_id}'
@@ -183,6 +191,17 @@ def is_there_user(user_id: int) -> bool:
     count = result[0][0]
 
     if count == 1:
+        return True
+    return False
+
+
+def is_there_location(loc_id: int) -> bool:
+    """Проверка существования местоположения"""
+    sql = f'SELECT location_id FROM locations WHERE location_id = {loc_id}'
+    cursor.execute(sql)
+    result = cursor.fetchall()
+
+    if len(result) == 1:
         return True
     return False
 
@@ -224,23 +243,6 @@ def get_locations_ids(user_id: int) -> List[int]:
     result = cursor.fetchall()
     locations_ids = [key for key, value in result]
     return locations_ids
-
-
-def get_near_locations_ids(user_location: int, locations_ids: List[int], radius: float) -> List[int]:
-    """Возвращает массив ближайших локаций"""
-    near_locations_ids = []
-    for location_id in locations_ids:
-        location = get_location(location_id)
-        if location.location:
-            coord = (
-                location.location['latitude'],
-                location.location['longitude']
-            )
-            dist = haversine(coord, user_location, unit=Unit.METERS)
-            if dist <= radius:
-                near_locations_ids.append(location_id)
-
-    return near_locations_ids
 
 
 def _init_db():
