@@ -192,7 +192,10 @@ def delete_user_data(user_id: int):
     sql = f'DELETE FROM locations WHERE user_id = {user_id};\n' \
           f'DELETE FROM users WHERE user_id = {user_id};'
     try:
-        cursor.execute(sql)
+        if type(cursor) is sqlite3.Cursor:
+            cursor.executescript(sql)
+        else:
+            cursor.execute(sql)
         conn.commit()
     except Exception as ex:
         print(ex)
@@ -227,11 +230,11 @@ def get_near_locations_ids(user_location: int, locations_ids: List[int], radius:
     """Возвращает массив ближайших локаций"""
     near_locations_ids = []
     for location_id in locations_ids:
-        title, address, location, photo = get_location(location_id)
-        if location:
+        location = get_location(location_id)
+        if location.location:
             coord = (
-                location['latitude'],
-                location['longitude']
+                location.location['latitude'],
+                location.location['longitude']
             )
             dist = haversine(coord, user_location, unit=Unit.METERS)
             if dist <= radius:

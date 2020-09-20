@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Dict
 
@@ -14,15 +13,16 @@ def clean_text(text: str) -> db.Location:
     location = db.Location(title=text)
 
     result = dadata.suggest('address', text)
-    result = result[0]
-    if result is not None:
-        location.address = result['value']
-        if result['data']['geo_lat'] is not None \
-                and result['data']['geo_lon'] is not None:
-            location.location = {
-                'latitude': float(result['data']['geo_lat']),
-                'longitude': float(result['data']['geo_lat'])
-            }
+    if len(result) > 0:
+        result = result[0]
+        if result is not None:
+            location.address = result['value']
+            if result['data']['geo_lat'] is not None \
+                    and result['data']['geo_lon'] is not None:
+                location.location = {
+                    'latitude': float(result['data']['geo_lat']),
+                    'longitude': float(result['data']['geo_lon'])
+                }
 
     return location
 

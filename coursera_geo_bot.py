@@ -66,12 +66,13 @@ def print_location(message: types.Message, loc_id: int) -> List[types.Message]:
 
     send_msgs = []
     for msg in reply_messages:
-        if len(msg) == 1:
-            send_msgs.append(bot.send_message(chat_id, *msg))
-        elif len(msg) == 2:
-            send_msgs.append(bot.send_photo(chat_id, *msg))
-        elif len(msg) == 4:
-            send_msgs.append(bot.send_venue(chat_id, *msg))
+        if msg:
+            if len(msg) == 1:
+                send_msgs.append(bot.send_message(chat_id, *msg))
+            elif len(msg) == 2:
+                send_msgs.append(bot.send_photo(chat_id, *msg))
+            elif len(msg) == 4:
+                send_msgs.append(bot.send_venue(chat_id, *msg))
 
     return send_msgs
 
@@ -165,10 +166,10 @@ def change_information(message: types.Message, loc_id: int, data: str):
 
     if response:
         bot.send_message(message.chat.id, response)
+        msgs = print_location(message, loc_id)
+        print_menu(message, loc_id, msgs)
     else:
         bot.send_message(message.chat.id, 'Что-то пошло не так :(')
-
-    print_location(message, loc_id)
 
 
 @bot.message_handler(commands=['list'])
