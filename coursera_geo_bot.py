@@ -247,11 +247,13 @@ def callback_handler(callback_query: types.CallbackQuery):
     }
 
     msg = bot.send_message(callback_query.message.chat.id, text[data])
-    bot.register_next_step_handler(msg, change_information, loc_id, data)
+    bot.register_next_step_handler(msg, change_information, callback_query)
 
 
-def change_information(message: types.Message, loc_id: int, data: str):
+def change_information(message: types.Message, callback_query: types.CallbackQuery):
     """Изменение карточки геопозиции"""
+    data, loc_id, msg1_id = callback_query.data.split('#')
+
     response = None
     if message.content_type == 'text' and data == 'title':
         response = location_process.change_title(loc_id, message.text)
@@ -264,6 +266,7 @@ def change_information(message: types.Message, loc_id: int, data: str):
 
     if response:
         bot.send_message(message.chat.id, response)
+        delete_location_page(callback_query)
         msgs = print_location(message, loc_id)
         print_menu(message, loc_id, msgs)
     else:
@@ -280,7 +283,6 @@ def change_information(message: types.Message, loc_id: int, data: str):
 def callback_handler(callback_query: types.CallbackQuery):
     """Запрос на удаление геопозиции"""
     chat_id = callback_query.message.chat.id
-    message_id = callback_query.message.message_id
     loc_id = callback_query.data.split('#')[1]
     response = location_process.delete_location(loc_id)
     if response:
