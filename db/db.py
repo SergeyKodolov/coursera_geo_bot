@@ -123,10 +123,11 @@ def get_location(location_id: int) -> Location:
 
     result = cursor.fetchall()
     title, address, location, photo = [None if item == 'null' else item for item in result[0]]
-    if location:
-        location = json.loads(location)
-    if photo:
-        photo = json.loads(photo)
+    if type(cursor) is sqlite3.Cursor:
+        if location:
+            location = json.loads(location)
+        if photo:
+            photo = json.loads(photo)
 
     return Location(title, address, location, photo)
 
