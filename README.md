@@ -1,5 +1,6 @@
 # Telegram Bot GeoNote
 Реализация Telegram бота в рамках прохождения специализации Coursera "Программирование на Python"
+
 Бот доступен по ссылке: https://t.me/coursera_geo_bot
 
 ## Доступные команды
